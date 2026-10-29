@@ -7,6 +7,7 @@ import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { glob } from 'tinyglobby';
 import { startServer } from './server.mjs';
+import { createSorter } from './sorter.mjs';
 import { staticAttributes, replaceAttributes } from './razor.mjs';
 
 const prefix = '<div class="';
@@ -53,11 +54,20 @@ async function run() {
   const staged = [];
   if (!sources.some(source => source.attributes.length)) throw new Error('No supported static class attributes. ' + skipped + ' tags skipped; nothing was checked.');
   try {
+    const sortClasses = await createSorter(cwd, config, tailwind.version);
     server = await startServer(cwd, config, rootFontSize);
     for (const { file, source, attributes } of sources) {
       if (!attributes.length) continue;
+      const report = (attribute, code, message) => {
+        if (!attribute) throw new Error('Diagnostic outside static class attribute');
+        const before = source.slice(0, attribute.start);
+        const line = before.split('\n').length;
+        const column = attribute.start - before.lastIndexOf('\n');
+        console.log(path.relative(cwd, file) + ':' + line + ':' + column + ' ' + code + ': ' + message);
+      };
       let values = attributes.map(attribute => unique(normalized(attribute.value)));
       let diagnostics;
+      let initialCanonical = [];
       for (let pass = 0; pass < 10; pass++) {
         const uri = pathToFileURL(file + '.tailmend-' + pass + '.html').href;
         const text = virtualText(values);
@@ -66,10 +76,9 @@ async function run() {
         const active = await server.request('@/tailwindCSS/getProject', { uri });
         if (!active?.version?.startsWith('4.')) throw new Error('No active Tailwind 4 project for ' + file);
         const canonical = diagnostics.filter(item => item.code === 'suggestCanonicalClasses');
+        if (pass === 0) initialCanonical = canonical;
         if (!canonical.length) {
-          const sorted = await server.request('@/tailwindCSS/sortSelection', { uri, classLists: values });
-          if (!sorted.classLists || sorted.classLists.length !== values.length) throw new Error('Tailwind class sorting failed.');
-          values = sorted.classLists;
+          values = values.map(sortClasses);
           await server.closeDocument(uri);
           break;
         }
@@ -102,17 +111,18 @@ async function run() {
         await server.closeDocument(uri);
         if (pass === 9) throw new Error('Normalization did not converge');
       }
-      for (const diagnostic of diagnostics) {
-        const attribute = attributes[diagnostic.range.start.line];
-        if (!attribute) throw new Error('Diagnostic outside static class attribute');
-        const before = source.slice(0, attribute.start);
-        const line = before.split('\n').length;
-        const column = attribute.start - before.lastIndexOf('\n');
-        console.log(path.relative(cwd, file) + ':' + line + ':' + column + ' ' + diagnostic.code + ': ' + diagnostic.message);
-        findings++;
+      for (const diagnostic of options.fix ? diagnostics : [...initialCanonical, ...diagnostics]) {
+        report(attributes[diagnostic.range.start.line], diagnostic.code, diagnostic.message);
       }
+      findings += diagnostics.length;
       const output = replaceAttributes(source, attributes, values);
       if (output !== source) {
+        if (!options.fix) {
+          for (const [index, attribute] of attributes.entries()) {
+            const original = normalized(attribute.value);
+            if (original !== values[index]) report(attribute, 'classList', JSON.stringify(original) + ' -> ' + JSON.stringify(values[index]));
+          }
+        }
         changes++;
         console.log((options.fix ? 'FIX ' : 'CHANGE ') + path.relative(cwd, file));
         staged.push({ file, source, output });

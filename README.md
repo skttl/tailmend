@@ -2,7 +2,7 @@
 
 Normalize, deduplicate and sort static Tailwind CSS classes in `.cshtml` and `.razor` files, without formatting the rest of the view.
 
-Tailmend uses the official Tailwind CSS language server for canonical class suggestions and sorting. It leaves distinct conflicting classes in place and reports them for manual review.
+Tailmend uses the official Tailwind CSS language server for canonical class suggestions and conflict diagnostics. Class sorting uses a JavaScript adaptation of [Theron Wang's Visual Studio sorter](https://github.com/theron-wang/Tailwind-CSS-for-Visual-Studio). It leaves distinct conflicting classes in place and reports them for manual review.
 
 ```html
 <!-- Before -->
@@ -39,6 +39,8 @@ npx tailmend --config styles/tailwind.css --fix "Views/**/*.cshtml"
 
 With neither `--check` nor `--fix`, Tailmend performs a read-only check. Quote globs so Tailmend, rather than your shell, expands them.
 
+Checks show the language server's canonical suggestions and a before/after preview for each changed class list, with the source file, line and column. This includes changes caused by sorting and duplicate removal.
+
 For repeatable local and CI checks, add package scripts:
 
 ```json
@@ -56,10 +58,12 @@ Run `npm run lint:classes` after `npm ci` in CI.
 
 - Applies canonical class suggestions from the official language server.
 - Removes duplicate class names, including duplicates exposed by canonicalization.
-- Sorts classes using Tailwind's official order.
+- Sorts classes by variant count, variant order and utility order using the Visual Studio sorter's data. Equal-ranked utilities retain their input order.
 - Preserves surrounding markup, UTF-8 BOM and line endings. Existing whitespace separators in multiline class lists are preserved where possible.
 
 For example, `[display:flex] flex` becomes `flex`. Both `flex grid` and `grid flex` retain both classes and produce a conflict diagnostic. Tailmend does not pick a winning class or apply conflict quickfixes.
+
+For sorting, `md:hover:p-4 sm:p-4 hover:focus:p-4` becomes `sm:p-4 hover:focus:p-4 md:hover:p-4`. The single-variant class comes first. Project theme values, prefixes and custom breakpoint sizes are loaded from the selected CSS entrypoint. Bundled order data covers Tailwind 4.0–4.3; other Tailwind 4 minor versions use the 4.0 base data.
 
 ## Supported syntax and limits
 
@@ -95,4 +99,4 @@ See [contributing](CONTRIBUTING.md), [release instructions](docs/releasing.md) a
 
 ## License
 
-[MIT](LICENSE). Tailmend is an independent project and is not affiliated with Tailwind Labs.
+[MIT](LICENSE). Sorting includes code and data adapted from Theron Wang's MIT-licensed extension; see [source and license details](vendor/visual-studio/README.md). Tailmend is an independent project and is not affiliated with Tailwind Labs.

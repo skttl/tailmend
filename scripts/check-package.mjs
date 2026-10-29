@@ -15,7 +15,10 @@ const run = (args, cwd = scratch) => {
 try {
   const [packed] = JSON.parse(run([process.env.npm_execpath, 'pack', '--json', '--pack-destination', scratch], root));
   assert.deepEqual(packed.files.map(file => file.path).sort(), [
-    'LICENSE', 'README.md', 'cli.mjs', 'docs/usage.md', 'package.json', 'razor.mjs', 'server.mjs',
+    'LICENSE', 'README.md', 'cli.mjs', 'docs/usage.md', 'package.json', 'razor.mjs', 'server.mjs', 'sorter.mjs',
+    'vendor/visual-studio/LICENSE', 'vendor/visual-studio/README.md',
+    ...['', 'V4_1/', 'V4_2/', 'V4_3/'].flatMap(version => ['order.json', 'variantorder.json']
+      .map(name => 'vendor/visual-studio/V4/' + version + name)),
   ].sort());
   await writeFile(path.join(scratch, 'package.json'), JSON.stringify({ name: 'tailmend-package-check', private: true, type: 'module' }));
   run([process.env.npm_execpath, 'install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev', path.join(scratch, packed.filename), 'tailwindcss@4.1.17']);
@@ -24,9 +27,9 @@ try {
   assert.ok(await readFile(path.join(scratch, 'node_modules', '.bin', process.platform === 'win32' ? 'tailmend.cmd' : 'tailmend'), 'utf8'));
   assert.match(run([process.env.npm_execpath, 'exec', '--offline', '--', 'tailmend', '--help']), /--config/);
   await writeFile(path.join(scratch, 'tailwind.css'), '@import "tailwindcss";');
-  await writeFile(path.join(scratch, 'View.cshtml'), '<div class="p-4 p-4"></div>\n');
+  await writeFile(path.join(scratch, 'View.cshtml'), '<div class="p-4 p-4"></div>\n<div class="md:hover:p-4 sm:p-4 hover:focus:p-4"></div>\n');
   run([cli, '--config', 'tailwind.css', '--fix']);
-  assert.equal(await readFile(path.join(scratch, 'View.cshtml'), 'utf8'), '<div class="p-4"></div>\n');
+  assert.equal(await readFile(path.join(scratch, 'View.cshtml'), 'utf8'), '<div class="p-4"></div>\n<div class="sm:p-4 hover:focus:p-4 md:hover:p-4"></div>\n');
   run([cli, '--config', 'tailwind.css', '--check']);
   console.log('PASS: package contents, isolated production install, CLI bin, fix and check.');
 } finally {

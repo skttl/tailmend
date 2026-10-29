@@ -1,6 +1,6 @@
 # Releasing Tailmend
 
-The package is prepared as `tailmend@0.1.0` for the public repository [skttl/tailmend](https://github.com/skttl/tailmend). Release preparation does not publish anything by itself.
+Tailmend is published from the public repository [skttl/tailmend](https://github.com/skttl/tailmend). The release tag must match the version in `package.json` and `package-lock.json`. Release preparation does not publish anything by itself.
 
 ## One-time repository setup
 
@@ -9,7 +9,7 @@ The package is prepared as `tailmend@0.1.0` for the public repository [skttl/tai
 3. Enable GitHub Actions and let the CI workflow pass on the intended release commit.
 4. Ensure the publishing npm account owns the package name and has two-factor authentication enabled. A missing package in a registry lookup does not guarantee the name can be registered.
 
-There is no build step. The `files` allowlist includes only runtime modules and the CLI reference; npm also includes `package.json`, README and LICENSE. Tests, fixtures and workflows are excluded.
+There is no build step. The `files` allowlist includes runtime modules, sorting data with its upstream license, and the CLI reference; npm also includes `package.json`, README and LICENSE. Tests, fixtures and workflows are excluded.
 
 ## First publication
 

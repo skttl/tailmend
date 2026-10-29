@@ -63,9 +63,22 @@ The scanner does not execute Razor, resolve components or Tag Helpers, or inspec
 
 ## Changes and diagnostics
 
-Tailmend applies canonical suggestions, deduplicates exact tokens and asks the official language server to sort them. Distinct conflicting classes remain present. `flex grid` therefore remains a manual finding, even after `--fix`; `flex md:grid` retains both utilities.
+Tailmend applies the official language server's canonical suggestions, deduplicates exact tokens and sorts them locally using a JavaScript adaptation of Theron Wang's Visual Studio sorter. Distinct conflicting classes remain present. `flex grid` therefore remains a manual finding, even after `--fix`; `flex md:grid` retains both utilities.
+
+Sorting groups classes by variant count, then the highest-ranked variant, then utility order. Upstream's special grouping for leading `group-` variants is retained. Unknown utilities come first within an otherwise equal variant group. Equal ranks preserve input order, so `p-8 p-4` stays in that order. This differs from the language server's sorting.
+
+The sorter loads the target project's Tailwind 4 design system for CSS imports, JS/TS configuration, prefixes, custom colors, spacing, breakpoints and containers. Colons inside arbitrary CSS values do not count as variant separators. Named container variants use configured sizes. The bundled order tables cover Tailwind 4.0–4.3; other Tailwind 4 minor versions use the 4.0 base tables. New utilities absent from those tables sort as unknown. Source revision and adaptations are recorded in `vendor/visual-studio/README.md`.
 
 Diagnostics point to the start of the original class attribute. `CHANGE` identifies a file that would change; `FIX` identifies a prepared change in fix mode. The final summary reports selected files, changed files, manual findings and skipped dynamic/unsupported tags. A `FIX` line alone does not confirm a successful write; check the exit status.
+
+Read-only checks print the language server's original canonical suggestions, followed by a `classList` before/after for each changed attribute. The before/after also covers duplicate removal and sorting, which are separate from server diagnostics. Whitespace is normalized in this preview; the file's formatting is preserved when fixing.
+
+```text
+View.cshtml:2:13 classList: "p-4 p-4" -> "p-4"
+CHANGE View.cshtml
+```
+
+Automatically fixable suggestions do not count as manual findings. `--fix` prints only remaining diagnostics and file summaries, rather than suggestions it has already applied.
 
 Canonicalization assumes utility tokens can be replaced without affecting application hooks or custom selectors. Root font size is a configured assumption, not a browser measurement.
 
