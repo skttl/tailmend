@@ -8,7 +8,10 @@ import { pathToFileURL } from 'node:url';
 import { glob } from 'tinyglobby';
 import { startServer } from './server.mjs';
 import { createSorter } from './sorter.mjs';
+import { loadTailwindProject } from './tailwind.mjs';
+import { createConflictResolver } from './conflicts.mjs';
 import { staticAttributes, replaceAttributes } from './razor.mjs';
+import { formatReports } from './reporter.mjs';
 
 const prefix = '<div class="';
 const virtualText = values => values.map(value => prefix + value + '"></div>').join('\n');
@@ -22,7 +25,7 @@ async function run() {
     'root-font-size': { type: 'string', default: '16' }, help: { type: 'boolean', short: 'h' },
   }, allowPositionals: true });
   if (options.help) {
-    console.log('Tailmend: tailmend --config <tailwind.css> [--cwd <project>] [--check | --fix] ["**/*.{razor,cshtml}"]\nExit codes: 0 clean, 1 changes/manual findings, 2 operational failure.\nRazor-containing tags are skipped; distinct conflicting classes require manual review.');
+    console.log('Tailmend: tailmend --config <tailwind.css> [--cwd <project>] [--check | --fix] ["**/*.{razor,cshtml}"]\nExit codes: 0 clean, 1 changes/manual findings, 2 operational failure.\nRazor-containing tags are skipped; fully overridden utilities are removed; remaining conflicts require manual review.');
     return 0;
   }
   if (!options.config || (options.check && options.fix)) throw new Error('Specify --config and at most one of --check / --fix.');
@@ -52,22 +55,31 @@ async function run() {
   let changes = 0;
   let findings = 0;
   const staged = [];
+  const reports = [];
   if (!sources.some(source => source.attributes.length)) throw new Error('No supported static class attributes. ' + skipped + ' tags skipped; nothing was checked.');
   try {
-    const sortClasses = await createSorter(cwd, config, tailwind.version);
+    const project = await loadTailwindProject(cwd, config);
+    const sortClasses = await createSorter(cwd, config, tailwind.version, project.design);
+    const knownClasses = sources.flatMap(source => source.attributes.flatMap(attribute => attribute.value.match(/\S+/g) ?? []));
+    const resolveConflicts = await createConflictResolver(project, knownClasses);
     server = await startServer(cwd, config, rootFontSize);
     for (const { file, source, attributes } of sources) {
       if (!attributes.length) continue;
-      const report = (attribute, code, message) => {
+      const events = [];
+      const report = (attribute, message) => {
         if (!attribute) throw new Error('Diagnostic outside static class attribute');
-        const before = source.slice(0, attribute.start);
-        const line = before.split('\n').length;
-        const column = attribute.start - before.lastIndexOf('\n');
-        console.log(path.relative(cwd, file) + ':' + line + ':' + column + ' ' + code + ': ' + message);
+        events.push({ position: attribute.start, line: source.slice(0, attribute.start).split('\n').length, message });
       };
-      let values = attributes.map(attribute => unique(normalized(attribute.value)));
+      const deduplicate = (value, index) => {
+        const counts = new Map();
+        for (const token of value.split(' ').filter(Boolean)) counts.set(token, (counts.get(token) ?? 0) + 1);
+        for (const [token, count] of counts) if (count > 1) {
+          report(attributes[index], 'duplicate: ' + token + ' removed' + (count > 2 ? ' (' + (count - 1) + ' copies)' : ''));
+        }
+        return unique(value);
+      };
+      let values = attributes.map((attribute, index) => deduplicate(normalized(attribute.value), index));
       let diagnostics;
-      let initialCanonical = [];
       for (let pass = 0; pass < 10; pass++) {
         const uri = pathToFileURL(file + '.tailmend-' + pass + '.html').href;
         const text = virtualText(values);
@@ -76,9 +88,23 @@ async function run() {
         const active = await server.request('@/tailwindCSS/getProject', { uri });
         if (!active?.version?.startsWith('4.')) throw new Error('No active Tailwind 4 project for ' + file);
         const canonical = diagnostics.filter(item => item.code === 'suggestCanonicalClasses');
-        if (pass === 0) initialCanonical = canonical;
         if (!canonical.length) {
-          values = values.map(sortClasses);
+          const resolved = await Promise.all(values.map(resolveConflicts));
+          if (resolved.some((value, index) => value !== values[index])) {
+            for (const [index, value] of values.entries()) {
+              const retained = new Set(resolved[index].split(' '));
+              for (const token of value.split(' ')) if (!retained.has(token)) report(attributes[index], 'cssConflict: ' + token + ' removed');
+            }
+            values = resolved;
+            await server.closeDocument(uri);
+            if (pass === 9) throw new Error('Normalization did not converge');
+            continue;
+          }
+          values = values.map((value, index) => {
+            const sorted = sortClasses(value);
+            if (sorted !== value) report(attributes[index], 'classes sorted');
+            return sorted;
+          });
           await server.closeDocument(uri);
           break;
         }
@@ -105,28 +131,24 @@ async function run() {
         if (!edits.length) throw new Error('Canonical diagnostic has no supported fix');
         for (const edit of edits) {
           const line = edit.range.start.line;
+          const previous = values[line].slice(edit.range.start.character - prefix.length, edit.range.end.character - prefix.length);
+          if (previous !== edit.newText) report(attributes[line], edit.newText ? 'changed ' + previous + ' to ' + edit.newText : 'canonical: ' + previous + ' removed');
           values[line] = values[line].slice(0, edit.range.start.character - prefix.length) + edit.newText + values[line].slice(edit.range.end.character - prefix.length);
         }
-        values = values.map(unique);
+        values = values.map(deduplicate);
         await server.closeDocument(uri);
         if (pass === 9) throw new Error('Normalization did not converge');
       }
-      for (const diagnostic of options.fix ? diagnostics : [...initialCanonical, ...diagnostics]) {
-        report(attributes[diagnostic.range.start.line], diagnostic.code, diagnostic.message);
+      for (const diagnostic of diagnostics) {
+        report(attributes[diagnostic.range.start.line], diagnostic.code + ': ' + diagnostic.message);
       }
       findings += diagnostics.length;
       const output = replaceAttributes(source, attributes, values);
       if (output !== source) {
-        if (!options.fix) {
-          for (const [index, attribute] of attributes.entries()) {
-            const original = normalized(attribute.value);
-            if (original !== values[index]) report(attribute, 'classList', JSON.stringify(original) + ' -> ' + JSON.stringify(values[index]));
-          }
-        }
         changes++;
-        console.log((options.fix ? 'FIX ' : 'CHANGE ') + path.relative(cwd, file));
         staged.push({ file, source, output });
       }
+      if (events.length) reports.push({ file: path.relative(cwd, file), events });
     }
     // Validate every file before writing any, and refuse to overwrite concurrent user edits.
     if (options.fix) {
@@ -134,7 +156,7 @@ async function run() {
       for (const item of staged) await writeFile(item.file, item.output, 'utf8');
     }
   } finally { server?.close(); }
-  console.log(files.length + ' files; ' + changes + (options.fix ? ' fixed' : ' need changes') + '; ' + findings + ' manual findings; ' + skipped + ' dynamic/unsupported tags skipped.');
+  console.log(formatReports(reports, { fix: options.fix, files: files.length, changes, findings, skipped }));
   return findings || (!options.fix && changes) ? 1 : 0;
 }
 

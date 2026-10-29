@@ -1,14 +1,8 @@
 // Adapted from Theron Wang's MIT-licensed Visual Studio sorter. See vendor/visual-studio/README.md.
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-import enhancedResolve from 'enhanced-resolve';
-import { createJiti } from 'jiti';
+import { loadTailwindProject } from './tailwind.mjs';
 
 const dataRoot = new URL('./vendor/visual-studio/V4/', import.meta.url);
-const resolveCss = enhancedResolve.create.sync({
-  extensions: ['.css'], mainFields: ['style'], conditionNames: ['style'],
-});
 
 async function orderFor(version, name) {
   const order = JSON.parse(await readFile(new URL(name + '.json', dataRoot), 'utf8'));
@@ -49,24 +43,9 @@ function pixels(value) {
   return match ? Number(match[1]) * (match[2] === 'rem' || match[2] === 'em' ? 16 : 1) : undefined;
 }
 
-export async function createSorter(cwd, config, version) {
+export async function createSorter(cwd, config, version, design) {
   if (!version.startsWith('4.')) throw new Error('Class sorting requires Tailwind 4.');
-  const projectRequire = createRequire(path.join(cwd, 'package.json'));
-  const { __unstable__loadDesignSystem: load } = projectRequire('tailwindcss');
-  if (typeof load !== 'function') throw new Error('Project Tailwind does not expose its design system.');
-  const design = await load(await readFile(config, 'utf8'), {
-    base: path.dirname(config),
-    async loadStylesheet(id, base) {
-      const file = resolveCss(base, id);
-      if (!file) throw new Error('Cannot resolve CSS import: ' + id);
-      return { path: file, base: path.dirname(file), content: await readFile(file, 'utf8') };
-    },
-    async loadModule(id, base) {
-      const jiti = createJiti(path.join(base, 'tailmend-loader.mjs'), { fsCache: false });
-      const file = jiti.resolve(id);
-      return { path: file, base: path.dirname(file), module: await jiti.import(file, { default: true }) };
-    },
-  });
+  design ??= (await loadTailwindProject(cwd, config)).design;
   const [classes, variants] = await Promise.all([orderFor(version, 'order'), orderFor(version, 'variantorder')]);
   const theme = design.theme;
   const colors = new Set(['inherit', 'current', 'transparent', ...theme.keysInNamespaces(['--color'])]);

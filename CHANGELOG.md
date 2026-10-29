@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-10-29
+
+- Make terminal reports easier to scan with spaced file sections, aligned line numbers, action labels, mode-specific summaries and optional terminal colors.
+- Group sorting changes per file, wrap long source-line lists and show the package version in the report heading.
+- Reject theme-only CSS configuration with an actionable entrypoint error instead of silently skipping conflict removal.
+- Remove fully overridden utilities using generated project CSS, respecting important modifiers and identical conditional contexts while retaining partial overlaps and unsupported cases.
+- Refresh conflict diagnostics after automatic removal.
+- Explain replacements, duplicate and conflict removals, sorting and remaining diagnostics by file and original line in both check and fix output.
+
 ## 0.2.0 - 2026-10-29
 
 - Replace language-server class sorting with a JavaScript adaptation of Theron Wang's Visual Studio sorter, including project theme metadata and stable equal ranks.

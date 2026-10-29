@@ -15,10 +15,13 @@ Integration checks create fixtures under `node_modules/.cache`. The package chec
 - `cli.mjs`: argument handling, file selection, normalization and writes.
 - `razor.mjs`: static attribute extraction and replacement.
 - `server.mjs`: official Tailwind language server lifecycle and requests.
+- `tailwind.mjs`: shared project configuration loading and CSS compilation.
+- `conflicts.mjs`: conservative removal of fully overridden utilities.
+- `reporter.mjs`: readable terminal and plain-text report formatting.
 - `self-check.mjs`: executable integration assertions.
 - `scripts/check-package.mjs`: published-file assertions and installed CLI smoke check.
 
-Keep changes focused. Parser changes should include a regression fixture, especially for syntax that must be skipped or rejected. Preserve surrounding markup and error handling. Do not resolve distinct conflicting classes by deleting one automatically.
+Keep changes focused. Parser changes should include a regression fixture, especially for syntax that must be skipped or rejected. Preserve surrounding markup and error handling. Remove a conflicting utility only when generated CSS proves its full supported declaration set is overridden. Keep unsupported cases for manual review.
 
 CI runs checks on Linux and Windows with Node.js 22 and 24. Keep `package-lock.json` in sync with `package.json`. The npm package uses a `files` allowlist; add any new runtime file there and update the package check.
 
