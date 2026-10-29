@@ -1,0 +1,26 @@
+{
+  "name": "tailmend",
+  "version": "0.1.0",
+  "description": "Normalize, deduplicate and sort static Tailwind CSS classes in Razor views.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/skttl/tailmend.git" },
+  "homepage": "https://github.com/skttl/tailmend#readme",
+  "bugs": { "url": "https://github.com/skttl/tailmend/issues" },
+  "keywords": ["tailwindcss", "razor", "cshtml", "blazor", "cli"],
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "tailmend": "cli.mjs" },
+  "files": ["cli.mjs", "razor.mjs", "server.mjs", "docs/usage.md"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "test": "node self-check.mjs",
+    "self-check": "node self-check.mjs",
+    "check:package": "node scripts/check-package.mjs"
+  },
+  "dependencies": {
+    "@tailwindcss/language-server": "0.16.0",
+    "tinyglobby": "0.2.17",
+    "vscode-jsonrpc": "8.2.0"
+  },
+  "devDependencies": { "tailwindcss": "4.1.17" }
+}

@@ -1,0 +1,46 @@
+name: Release to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Validate release tag and repository
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          assert.match(process.env.RELEASE_TAG, /^v\d+\.\d+\.\d+$/);
+          assert.equal(process.env.RELEASE_TAG, `v${pkg.version}`, 'Tag must match package.json');
+          assert.equal(pkg.repository.url, `git+https://github.com/${process.env.GITHUB_REPOSITORY}.git`);
+          assert.equal(pkg.private, undefined, 'Package must be publishable');
+          NODE
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:package
+      - run: npm publish --provenance --access public
